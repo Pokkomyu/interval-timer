@@ -64,12 +64,21 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:3px}
 </main>
 <script>
 (function(){
+  var LIM={work:[5,300],rest:[5,300],rounds:[1,30]};
+  var KEY='interval-timer:settings',PREP=5;
   var S={work:40,rest:20,rounds:8};
+  try{
+    var saved=JSON.parse(localStorage.getItem(KEY)||'null');
+    if(saved)Object.keys(LIM).forEach(function(k){
+      var v=+saved[k];if(isFinite(v))S[k]=Math.min(LIM[k][1],Math.max(LIM[k][0],Math.round(v)));
+    });
+  }catch(e){}
   var phase='ready',round=1,remain=0,endAt=0,running=false,timer=null,lastSec=null,ac=null,wake=null;
   var $=function(i){return document.getElementById(i)};
-  var LABEL={ready:'スタンバイ',work:'動く！',rest:'休憩',done:'おつかれさま！'};
+  var LABEL={ready:'スタンバイ',prep:'じゅんび',work:'動く！',rest:'休憩',done:'おつかれさま！'};
 
-  function dur(p){return (p==='rest'?S.rest:S.work)*1000}
+  function dur(p){return (p==='prep'?PREP:p==='rest'?S.rest:S.work)*1000}
+  function active(){return phase==='prep'||phase==='work'||phase==='rest'}
   function beep(freq,ms){
     try{
       if(!ac)return;
@@ -90,20 +99,30 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:3px}
     var frac=phase==='done'?0:Math.min(1,Math.max(0,showMs/total));
     $('ring').style.strokeDashoffset=(565.5*(1-frac)).toFixed(1);
     $('round').textContent=(phase==='done'?S.rounds:round)+' / '+S.rounds+' ラウンド';
-    $('go').textContent=running?'一時停止':(phase==='work'||phase==='rest')?'つづける':'スタート';
-    var locked=phase==='work'||phase==='rest';
+    $('go').textContent=running?'一時停止':active()?'つづける':'スタート';
+    var locked=active();
     document.querySelectorAll('.step button').forEach(function(b){b.disabled=locked});
     $('v-work').textContent=S.work+'秒';$('v-rest').textContent=S.rest+'秒';$('v-rounds').textContent=S.rounds+'回';
-    document.title=(phase==='work'||phase==='rest')?Math.ceil(remain/1000)+'秒 '+LABEL[phase]:'40秒動く・20秒休むタイマー';
+    document.title=active()?Math.ceil(remain/1000)+'秒 '+LABEL[phase]:'40秒動く・20秒休むタイマー';
+  }
+  // 次の区間へ進める。最後のラウンドの「動く」が終わったら false
+  function advance(){
+    if(phase==='prep'){phase='work'}
+    else if(phase==='work'){
+      if(round>=S.rounds)return false;
+      phase='rest';
+    }else{phase='work';round++}
+    return true;
   }
   function tick(){
     remain=endAt-performance.now();
     if(remain<=0){
-      if(phase==='work'){
-        if(round>=S.rounds){finish();return}
-        phase='rest';
-      }else{phase='work';round++}
-      remain=dur(phase);endAt=performance.now()+remain;lastSec=null;
+      // 裏に回って更新が止まっていた間に過ぎた区間もまとめて進める(終わった時刻から次の区間を数える)
+      while(remain<=0){
+        if(!advance()){finish();return}
+        endAt+=dur(phase);remain=endAt-performance.now();
+      }
+      lastSec=null;
       beep(phase==='work'?1175:660,450);buzz(phase==='work'?[200,80,200]:300);
     }else{
       var s=Math.ceil(remain/1000);
@@ -129,19 +148,21 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:3px}
       if(ac.state==='suspended')ac.resume();
     }catch(e){}
     if(running){stop();render();return}
-    if(phase==='ready'||phase==='done'){phase='work';round=1;remain=dur('work');beep(1175,450);buzz([200,80,200])}
+    if(phase==='ready'||phase==='done'){phase='prep';round=1;remain=dur('prep')}
     begin();render();
   });
   $('reset').addEventListener('click',function(){stop();phase='ready';round=1;remain=0;render()});
   document.querySelectorAll('.step button').forEach(function(b){
     b.addEventListener('click',function(){
-      var k=b.dataset.k,d=+b.dataset.d,lim={work:[5,300],rest:[5,300],rounds:[1,30]}[k];
+      var k=b.dataset.k,d=+b.dataset.d,lim=LIM[k];
       S[k]=Math.min(lim[1],Math.max(lim[0],S[k]+d));
+      try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
       if(phase==='done'){phase='ready'}
       render();
     });
   });
   document.addEventListener('visibilitychange',function(){
+    if(!document.hidden&&running)tick();
     if(!document.hidden&&running&&!wake){try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(function(w){wake=w}).catch(function(){})}catch(e){}}
   });
   render();
