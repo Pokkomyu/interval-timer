@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>40秒動く・20秒休むタイマー</title>
+<title>インターバルタイマー</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;900&display=swap">
 <style>
 :root{
@@ -103,7 +103,7 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:3px}
     var locked=active();
     document.querySelectorAll('.step button').forEach(function(b){b.disabled=locked});
     $('v-work').textContent=S.work+'秒';$('v-rest').textContent=S.rest+'秒';$('v-rounds').textContent=S.rounds+'回';
-    document.title=active()?Math.ceil(remain/1000)+'秒 '+LABEL[phase]:'40秒動く・20秒休むタイマー';
+    document.title=active()?Math.ceil(remain/1000)+'秒 '+LABEL[phase]:'インターバルタイマー';
   }
   // 次の区間へ進める。最後のラウンドの「動く」が終わったら false
   function advance(){
