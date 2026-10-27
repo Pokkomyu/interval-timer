@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>40秒動く・20秒休むタイマー</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;900&display=swap">
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#FFF4F8; --fg:#3A1F2D; --sub:#8A6676; --accent:#E0287A; --on:#fff; --track:rgba(58,31,45,.12); --card:#fff;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){--bg:#1D1219;--fg:#FBE9F1;--sub:#B592A3;--accent:#FF5FA2;--on:#2A0F1D;--track:rgba(251,233,241,.16);--card:#2A1B24}
+}
+:root[data-theme="dark"]{--bg:#1D1219;--fg:#FBE9F1;--sub:#B592A3;--accent:#FF5FA2;--on:#2A0F1D;--track:rgba(251,233,241,.16);--card:#2A1B24}
+body[data-phase="work"]{--bg:#E0287A;--fg:#fff;--sub:rgba(255,255,255,.8);--accent:#fff;--on:#E0287A;--track:rgba(255,255,255,.28);--card:rgba(255,255,255,.16)}
+body[data-phase="rest"]{--bg:#0E8F83;--fg:#fff;--sub:rgba(255,255,255,.82);--accent:#fff;--on:#0E8F83;--track:rgba(255,255,255,.28);--card:rgba(255,255,255,.16)}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic",sans-serif;font-weight:500;transition:background .3s}
+main{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px;max-width:420px;margin:0 auto}
+#label{font-size:1.6rem;font-weight:900;margin:0}
+.ring{position:relative;width:min(78vw,300px);aspect-ratio:1}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:10;stroke-linecap:round}
+.ring .t{stroke:var(--track)}
+.ring .p{stroke:var(--accent);stroke-dasharray:565.5;stroke-dashoffset:0;transition:stroke-dashoffset .12s linear}
+#num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:6.5rem;font-weight:900;font-variant-numeric:tabular-nums}
+#round{margin:0;color:var(--sub);font-size:1.1rem}
+.ctrl{display:flex;gap:12px;margin-top:6px}
+button{font:inherit;font-weight:900;border:0;border-radius:999px;cursor:pointer;min-height:52px}
+button:focus-visible{outline:3px solid var(--fg);outline-offset:3px}
+#go{background:var(--accent);color:var(--on);font-size:1.25rem;padding:0 38px}
+#reset{background:var(--card);color:var(--fg);font-size:1rem;padding:0 22px}
+.set{display:grid;gap:8px;width:100%;margin-top:10px}
+.row{display:flex;align-items:center;justify-content:space-between;background:var(--card);border-radius:16px;padding:6px 8px 6px 18px}
+.row span{color:var(--fg)}
+.step{display:flex;align-items:center;gap:6px}
+.step button{width:40px;min-height:40px;background:var(--bg);color:var(--fg);font-size:1.3rem;padding:0}
+.step button:disabled{opacity:.35;cursor:default}
+.step b{min-width:3.4em;text-align:center;font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){body,.ring .p{transition:none}}
+</style>
+</head>
+<body data-phase="ready">
+<main>
+  <p id="label">スタンバイ</p>
+  <div class="ring" role="timer" aria-live="off">
+    <svg viewBox="0 0 200 200" aria-hidden="true"><circle class="t" cx="100" cy="100" r="90"/><circle class="p" id="ring" cx="100" cy="100" r="90"/></svg>
+    <div id="num">40</div>
+  </div>
+  <p id="round">1 / 8 ラウンド</p>
+  <div class="ctrl">
+    <button id="go">スタート</button>
+    <button id="reset">リセット</button>
+  </div>
+  <div class="set">
+    <div class="row"><span>動く</span><div class="step"><button data-k="work" data-d="-5" aria-label="動く秒数を減らす">−</button><b id="v-work"></b><button data-k="work" data-d="5" aria-label="動く秒数を増やす">＋</button></div></div>
+    <div class="row"><span>休む</span><div class="step"><button data-k="rest" data-d="-5" aria-label="休む秒数を減らす">−</button><b id="v-rest"></b><button data-k="rest" data-d="5" aria-label="休む秒数を増やす">＋</button></div></div>
+    <div class="row"><span>ラウンド数</span><div class="step"><button data-k="rounds" data-d="-1" aria-label="ラウンドを減らす">−</button><b id="v-rounds"></b><button data-k="rounds" data-d="1" aria-label="ラウンドを増やす">＋</button></div></div>
+  </div>
+</main>
+<script>
+(function(){
+  var S={work:40,rest:20,rounds:8};
+  var phase='ready',round=1,remain=0,endAt=0,running=false,timer=null,lastSec=null,ac=null,wake=null;
+  var $=function(i){return document.getElementById(i)};
+  var LABEL={ready:'スタンバイ',work:'動く！',rest:'休憩',done:'おつかれさま！'};
+
+  function dur(p){return (p==='rest'?S.rest:S.work)*1000}
+  function beep(freq,ms){
+    try{
+      if(!ac)return;
+      var o=ac.createOscillator(),g=ac.createGain();
+      o.type='sine';o.frequency.value=freq;
+      g.gain.setValueAtTime(.25,ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+ms/1000);
+      o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+ms/1000);
+    }catch(e){}
+  }
+  function buzz(n){try{navigator.vibrate&&navigator.vibrate(n)}catch(e){}}
+  function render(){
+    document.body.setAttribute('data-phase',phase==='done'?'ready':phase);
+    $('label').textContent=LABEL[phase];
+    var showMs=(phase==='ready'||phase==='done')?S.work*1000:remain;
+    $('num').textContent=phase==='done'?'✓':Math.max(0,Math.ceil(showMs/1000));
+    var total=phase==='ready'||phase==='done'?S.work*1000:dur(phase);
+    var frac=phase==='done'?0:Math.min(1,Math.max(0,showMs/total));
+    $('ring').style.strokeDashoffset=(565.5*(1-frac)).toFixed(1);
+    $('round').textContent=(phase==='done'?S.rounds:round)+' / '+S.rounds+' ラウンド';
+    $('go').textContent=running?'一時停止':(phase==='work'||phase==='rest')?'つづける':'スタート';
+    var locked=phase==='work'||phase==='rest';
+    document.querySelectorAll('.step button').forEach(function(b){b.disabled=locked});
+    $('v-work').textContent=S.work+'秒';$('v-rest').textContent=S.rest+'秒';$('v-rounds').textContent=S.rounds+'回';
+    document.title=(phase==='work'||phase==='rest')?Math.ceil(remain/1000)+'秒 '+LABEL[phase]:'40秒動く・20秒休むタイマー';
+  }
+  function tick(){
+    remain=endAt-performance.now();
+    if(remain<=0){
+      if(phase==='work'){
+        if(round>=S.rounds){finish();return}
+        phase='rest';
+      }else{phase='work';round++}
+      remain=dur(phase);endAt=performance.now()+remain;lastSec=null;
+      beep(phase==='work'?1175:660,450);buzz(phase==='work'?[200,80,200]:300);
+    }else{
+      var s=Math.ceil(remain/1000);
+      if(s!==lastSec){lastSec=s;if(s<=3)beep(880,140)}
+    }
+    render();
+  }
+  function finish(){
+    stop();phase='done';remain=0;
+    beep(1175,200);setTimeout(function(){beep(1480,500)},260);buzz([300,100,300,100,500]);
+    render();
+  }
+  function stop(){running=false;clearInterval(timer);timer=null;
+    try{wake&&wake.release();wake=null}catch(e){}}
+  function begin(){
+    running=true;endAt=performance.now()+remain;lastSec=null;
+    timer=setInterval(tick,100);
+    try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(function(w){wake=w}).catch(function(){})}catch(e){}
+  }
+  $('go').addEventListener('click',function(){
+    try{
+      if(!ac)ac=new (window.AudioContext||window.webkitAudioContext)();
+      if(ac.state==='suspended')ac.resume();
+    }catch(e){}
+    if(running){stop();render();return}
+    if(phase==='ready'||phase==='done'){phase='work';round=1;remain=dur('work');beep(1175,450);buzz([200,80,200])}
+    begin();render();
+  });
+  $('reset').addEventListener('click',function(){stop();phase='ready';round=1;remain=0;render()});
+  document.querySelectorAll('.step button').forEach(function(b){
+    b.addEventListener('click',function(){
+      var k=b.dataset.k,d=+b.dataset.d,lim={work:[5,300],rest:[5,300],rounds:[1,30]}[k];
+      S[k]=Math.min(lim[1],Math.max(lim[0],S[k]+d));
+      if(phase==='done'){phase='ready'}
+      render();
+    });
+  });
+  document.addEventListener('visibilitychange',function(){
+    if(!document.hidden&&running&&!wake){try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(function(w){wake=w}).catch(function(){})}catch(e){}}
+  });
+  render();
+})();
+</script>
+</body>
+</html>
